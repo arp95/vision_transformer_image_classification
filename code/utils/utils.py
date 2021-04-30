@@ -17,6 +17,128 @@ from sklearn.metrics import confusion_matrix
 from PIL import ImageFile
 torch.backends.cudnn.benchmark = True
 
+
+def collate_fn_1channel(data):
+    """
+       data: is a list of tuples with (example, label, length)
+             where 'example' is a tensor of arbitrary shape
+             and label/length are scalars
+    """
+    input, labels, lengths = zip(*data)
+    features = torch.zeros(4, 1, int(max(lengths)), int(max(lengths)))
+    labels = torch.tensor(labels)
+    lengths = torch.tensor(lengths)
+
+    for i in range(4):
+        features[i, :, :int(lengths[i]), :int(lengths[i])] = input[i]
+    return features, labels.long(), lengths.long()
+
+
+# class: handles class imbalance during training 
+class ImbalancedDatasetSampler_1channel(torch.utils.data.sampler.Sampler):
+    """Samples elements randomly from a given list of indices for imbalanced dataset
+    Arguments:
+        dataset: the list of train_data
+        indices (list, optional): a list of indices
+        num_samples (int, optional): number of samples to draw
+        callback_get_label func: a callback-like function which takes two arguments - dataset and index
+        weights: the list of weights for each sample
+        label_weights: the number of samples for each class
+    """
+
+    
+    def __init__(self, dataset, indices=None, num_samples=None, callback_get_label=None, weights=None, label_weights=None):
+                
+        # if indices is not provided, all elements in the dataset will be considered
+        self.indices = list(range(len(dataset))) if indices is None else indices
+
+        # define custom callback
+        self.callback_get_label = callback_get_label
+
+        # if num_samples is not provided, draw `len(indices)` samples in each iteration
+        self.num_samples = len(self.indices) if num_samples is None else num_samples
+            
+        # distribution of classes in the dataset 
+        label_to_count = {}
+        label_to_count[0] = label_weights[0]
+        label_to_count[1] = label_weights[1]
+        label_to_count[2] = label_weights[2]
+        label_to_count[3] = label_weights[3]
+                
+        # weight for each sample
+        if weights == None:
+            weights = [1.0 / label_to_count[self._get_label(dataset, idx)] for idx in self.indices]
+        self.weights = torch.DoubleTensor(weights)
+
+    def _get_label(self, dataset, idx):
+        if self.callback_get_label:
+            return self.callback_get_label(dataset, idx)
+        elif isinstance(dataset, torchvision.datasets.MNIST):
+            return dataset.train_labels[idx].item()
+        elif isinstance(dataset, torchvision.datasets.ImageFolder):
+            return dataset.imgs[idx][1]
+        elif isinstance(dataset, torch.utils.data.Subset):
+            return dataset.dataset.imgs[idx][1]
+        else:
+            return dataset.__getitem__(idx)[1]
+                
+    def __iter__(self):
+        return (self.indices[i] for i in torch.multinomial(self.weights, self.num_samples, replacement=True))
+
+    def __len__(self):
+        return self.num_samples
+    
+    
+# handling class imbalance during training 
+class ImbalancedDatasetSampler_5channel(torch.utils.data.sampler.Sampler):
+    """Samples elements randomly from a given list of indices for imbalanced dataset
+    Arguments:
+        indices (list, optional): a list of indices
+        num_samples (int, optional): number of samples to draw
+        callback_get_label func: a callback-like function which takes two arguments - dataset and index
+    """
+
+    def __init__(self, dataset, indices=None, num_samples=None, callback_get_label=None, weights=None, label_weights=None):
+                
+        # if indices is not provided, all elements in the dataset will be considered
+        self.indices = list(range(len(dataset))) if indices is None else indices
+
+        # define custom callback
+        self.callback_get_label = callback_get_label
+
+        # if num_samples is not provided, draw `len(indices)` samples in each iteration
+        self.num_samples = len(self.indices) if num_samples is None else num_samples
+            
+        # distribution of classes in the dataset 
+        label_to_count = {}
+        label_to_count[0] = label_weights[0]
+        label_to_count[1] = label_weights[1]
+        label_to_count[2] = label_weights[2]
+        label_to_count[3] = label_weights[2]
+                
+        # weight for each sample
+        if weights == None:
+            weights = [1.0 / label_to_count[self._get_label(dataset, idx)] for idx in self.indices]
+        self.weights = torch.DoubleTensor(weights)
+
+    def _get_label(self, dataset, idx):
+        if self.callback_get_label:
+            return self.callback_get_label(dataset, idx)
+        elif isinstance(dataset, torchvision.datasets.MNIST):
+            return dataset.train_labels[idx].item()
+        elif isinstance(dataset, torchvision.datasets.ImageFolder):
+            return dataset.imgs[idx][1]
+        elif isinstance(dataset, torch.utils.data.Subset):
+            return dataset.dataset.imgs[idx][1]
+        else:
+            return dataset.__getitem__(idx)[1]
+                
+    def __iter__(self):
+        return (self.indices[i] for i in torch.multinomial(self.weights, self.num_samples, replacement=True))
+
+    def __len__(self):
+        return self.num_samples
+    
     
 # class: Cross-Entropy loss with Label Smoothing
 class CrossEntropyLabelSmoothingLoss(torch.nn.Module):
